@@ -1,0 +1,62 @@
+[
+  {
+    "content": "Restore repo ke /app + install deps + services RUNNING",
+    "status": "completed"
+  },
+  {
+    "content": "Baseline verifikasi: gate.sh HIJAU 40/40 sebelum menyentuh kode",
+    "status": "completed"
+  },
+  {
+    "content": "RCA: temukan sumber data sampah 'AAAA…' + polusi guardrail lain (157 dokumen)",
+    "status": "completed"
+  },
+  {
+    "content": "Fix sumber: 11 skrip penulis wajib bersih-bersih total (cascade side-effect)",
+    "status": "completed"
+  },
+  {
+    "content": "Fix produk: audit_logs summary dibatasi _clip (anti baris 60k karakter)",
+    "status": "completed"
+  },
+  {
+    "content": "Fix seed: conversion_events masuk reset + reseed memanggil purge",
+    "status": "completed"
+  },
+  {
+    "content": "Guardrail baru INV-CLEAN-01 + self-test 5 mutasi + wire gate.sh + INVARIANTS.md",
+    "status": "completed"
+  },
+  {
+    "content": "Alat baru: purge_test_pollution.py + db_snapshot.py",
+    "status": "completed"
+  },
+  {
+    "content": "gate.sh HIJAU 42/42 + DB 0 artefak SESUDAH gate (bukti anti-menumpuk)",
+    "status": "completed"
+  },
+  {
+    "content": "POC test_core_booking_v1 74/74 + test_core_lp_f8 84/84",
+    "status": "completed"
+  },
+  {
+    "content": "testing_agent iter-89: kebersihan data 100% + RBAC 20/20",
+    "status": "completed"
+  },
+  {
+    "content": "testing_agent iter-90: alur end-to-end publik→ERP + keuangan + 17 modul 100%",
+    "status": "completed"
+  },
+  {
+    "content": "testing_agent iter-91: ALUR E dispatch→perjalanan→selesai 100%",
+    "status": "completed"
+  },
+  {
+    "content": "Update dokumen SSOT (INVARIANTS, BUG_REGISTRY, SESSION_HANDOFF, HANDOFF, plan.md, scripts/README)",
+    "status": "completed"
+  },
+  {
+    "content": "Gate verifikasi terakhir sesudah update dokumen: HIJAU 42/42",
+    "status": "completed"
+  }
+]
