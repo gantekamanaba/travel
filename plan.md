@@ -45,18 +45,23 @@
 >
 > **STATUS 2026-08-17 (sesi 5 / REQUEST BARU: SITE-WIDE VISUAL PAGE BUILDER) — PLANNING ONLY.**
 > User meminta kemampuan **edit SEMUA halaman publik** (Beranda, Tentang, Armada, Destinasi,
-> Kontak, Footer, Logo, Typography, cards, dsb) lewat **visual page builder drag-and-drop**
-> ala Wix. User eksplisit: **"buatkan plannya saja dulu, jangan eksekusi"**.
-> 
-> **Audit yang sudah dilakukan (tanpa coding):**
-> - CMS `/app/cms` memang ada & berfungsi, tetapi cakupannya terbatas: Destinasi, Paket, Artikel,
->   Testimoni, Promo, Tema Situs (warna).
-> - Ditemukan gap: banyak konten publik masih hardcode di JSX (`Home.jsx`, `About.jsx`, bagian
->   tertentu `Fleet.jsx`, `Contact.jsx`, dan Footer). Typography belum punya kontrol.
-> - Fondasi paling dekat: **Landing Page Iklan Builder** (`/app/landing`) sudah punya mesin
->   block-based builder matang (renderer + media library + reorder + preview) dan backend
->   `routers/landing.py` + collection `landing_pages`. Rencana: **extend/reuse** mesin ini
->   untuk halaman inti situs, bukan membuat sistem baru dari nol.
+> Kontak, Footer, Logo, Typography, cards, dsb) lewat **visual page builder drag-and-drop** ala Wix.
+> User eksplisit: **"buatkan plannya saja dulu, jangan eksekusi"**.
+>
+> **Audit tambahan (tanpa coding) yang mengoreksi asumsi Phase 8 sebelumnya:**
+> - Footer **bukan** komponen terpisah: inline di `frontend/src/components/public/PublicLayout.jsx` (baris ~237–278).
+>   - Kolom **Kontak** dan bar copyright **sudah dinamis** dari `/public/company` → bukan gap.
+>   - Gap nyata: **teks deskripsi brand** masih hardcode + **belum ada sosial media** sama sekali.
+>   - Kolom **Jelajahi/Layanan** adalah navigasi fungsional (link route internal) → hanya boleh **show/hide**, bukan teks bebas.
+> - Logo publik `frontend/src/components/public/Logo.jsx` adalah SVG monogram hardcode (bukan image upload).
+>   `frontend/src/components/public/Preloader.jsx` menduplikasi SVG manual → sebaiknya reuse `Logo.jsx`.
+> - Typography belum ada mekanisme global; `font-fraunces` tersebar di banyak heading.
+>   Solusi harus lewat CSS variable `--font-heading/--font-body` agar 1 setting berlaku site-wide.
+> - `frontend/src/components/cms/ThemeManagerPanel.jsx` sudah mengelola `settings.theme_config`.
+>   Keputusan arsitektur diperbaiki: **logo + typography** digabung ke `theme_config` yang sama (bukan `settings.branding` terpisah).
+> - RBAC: `backend/permissions_config.py` mengizinkan `landing` untuk `{owner, marketing_admin}` → jadi acuan untuk section baru `site_builder`.
+
+---
 
 ## 1) Objectives
 
@@ -69,17 +74,19 @@
 - Fix temuan LOW: **menu “Media Library” tampil untuk marketing_admin**.
 - Fix kebersihan data uji (BUG-0127): tidak ada test pollution; gate 42/42 hijau.
 
-### Objective baru (Phase 8 — PLANNED)
+### Objective baru (Phase 8 — 🅿️ PLANNED)
 
 - Bangun **Site-wide Visual Page Builder** untuk **SEMUA halaman publik inti** + elemen global:
   - Halaman inti: **Beranda (/), Tentang (/about), Armada (/fleet), Destinasi (/destinations), Kontak (/contact)**.
-  - Elemen global: **Footer**, **Logo**, **Typography (heading/body font)**, dan komponen kartu/CTA.
+  - Elemen global: **Footer** (deskripsi brand + sosial media + toggle kolom nav), **Logo** (image opsional), **Typography** (heading/body font), serta blok-blok kartu/CTA.
 - Builder harus:
-  1. **WYSIWYG preview** desktop/mobile (seperti Landing Page Builder).
-  2. Mendukung **blok reusable** (hero, grid armada, FAQ, CTA band, dsb).
-  3. Perubahan **aman**: situs tidak pernah blank/500 (fallback ke default blocks).
-  4. Menjaga standar desain: kontrol typography dibatasi ke daftar font yang disetujui.
+  1. Memakai pola builder yang sudah ada (Landing Builder) dengan **preview WYSIWYG** desktop/mobile.
+  2. Mendukung **blok reusable** (hero, value props, FAQ, CTA band, dst).
+  3. **Aman**: situs tidak pernah blank/500 (fallback default blocks; blok tak dikenal di-skip).
+  4. Menjaga standar desain: typography/font lewat **whitelist** + CSS variable global.
 - **Tidak ada implementasi di sesi ini**: hanya rencana.
+
+---
 
 ## 2) Implementation Steps
 
@@ -185,133 +192,276 @@ User stories (ERP/ops):
 
 > **Aturan sesi ini:** hanya rencana. Tidak ada perubahan kode, migrasi, atau eksekusi gate.
 
-#### Phase 8.0 — Arsitektur & Scope Lock (Design Doc)
+#### Phase 8.0 — Arsitektur & Scope Lock (Design Doc) — 🅿️ PLANNED
 
-**Keputusan arsitektur (berbasis audit):**
-- Reuse & extend engine yang sudah matang di **Landing Page Builder** (`/app/landing`):
-  - renderer `LandingRender.jsx` (atau diekstrak jadi `BlockRender` generik)
-  - block forms (`LandingBlockForm` pattern)
-  - media library
-  - preview desktop/mobile
-  - reorder blok (naik/turun; drag native opsional)
+**User stories**
+1. Sebagai maintainer, halaman inti situs memakai storage terpisah dari `landing_pages` agar workflow iklan (publish/readiness/A-B test) tidak mencemari situs utama.
+2. Sebagai owner, saya mengedit halaman inti tanpa konsep publish terpisah: **simpan = langsung tayang** di route fixed.
+3. Sebagai QA, saya punya kontrak jelas tentang footer: link navigasi (Jelajahi/Layanan) hanya bisa **show/hide**, bukan teks bebas.
+4. Sebagai desainer sistem, typography global bisa diubah dari ERP tetapi dibatasi **whitelist font** (agar konsistensi desain terjaga).
 
-**Pemisahan domain:**
-- Halaman iklan (`/lp/:slug`) tetap memakai `landing_pages` dengan publish/unpublish, readiness, A/B test.
-- Halaman inti situs memakai storage terpisah agar tidak tercampur dengan workflow iklan.
+**Keputusan arsitektur (berbasis audit, tanpa coding)**
+- Reuse engine yang sudah ada di **Landing Page Builder** (`/app/landing`): preview desktop/mobile, daftar blok, media library, editor blok.
+- Halaman iklan (`/lp/:slug`) tetap menggunakan `landing_pages`.
+- Halaman inti situs menggunakan collection baru `site_pages` dan `site_footer`.
+- **Branding & typography digabung ke `settings.theme_config`** (yang sudah ada): tambah `logo_url`, `heading_font`, `body_font`.
 
-**Storage yang direncanakan:**
-- `site_pages` (key tetap): `home`, `about`, `fleet_index`, `destinations_index`, `contact`.
-- `site_footer` (single document) dipakai semua halaman publik termasuk `/lp/:slug`.
-- `settings.branding` (baru): `logo_url`, `heading_font`, `body_font`.
+**Catatan soal drag-and-drop**
+- Engine existing memakai reorder tombol naik/turun (setara fungsional). Drag-native opsional dan menambah scope (library baru).
 
-**Kontrak perilaku produksi:**
-- Halaman inti route-nya fixed (/, /about, dst) → tidak ada konsep “publish” terpisah.
-- UI aksi: **Simpan & Tayang** (langsung live) + optional **riwayat versi** (rollback).
+**Deliverable (dokumen, bukan kode)**
+- Kontrak data `site_pages/site_footer/theme_config`.
+- Whitelist blok per `page_key` (lihat Phase 8.2).
+- Aturan fallback anti-blank.
+- Urutan rollout yang disarankan: **Kontak → Tentang → Armada → Beranda → Footer/Branding terakhir**.
 
-**Catatan risiko drag-and-drop:**
-- Engine existing memakai reorder tombol naik/turun (setara fungsional).
-- Drag native (seret lepas) butuh library baru (mis. dnd-kit) → risiko & waktu bertambah.
+---
 
-Deliverable:
-- Dokumen desain/kontrak blok + daftar blok minimal + mapping halaman→blok.
+#### Phase 8.1 — Backend: Model & API — 🅿️ PLANNED
 
-#### Phase 8.1 — Backend: Model & API
+**File BARU (direncanakan)**
+- `backend/routers/site_pages.py` — router baru untuk halaman inti & footer.
+- (opsional) `backend/services/site_pages_defaults.py` — default blocks per page_key untuk fallback.
 
-Koleksi:
-- `site_pages`: `{ page_key, blocks: [{id,type,hidden,device,props}], updated_at, created_at, versions? }`
-- `site_footer`: `{ blocks/structure, updated_at }`
-- Extend `settings`: `{ branding: { logo_url, heading_font, body_font } }`
+**File DIMODIFIKASI (direncanakan)**
+- `backend/server.py` — `app.include_router(site_pages.router)`.
+- `backend/permissions_config.py` — tambah section baru:
+  - `SECTION_ACCESS["site_builder"] = {"owner", "marketing_admin"}`
+- Router/settings backend yang mengelola `/api/settings` — extend schema `theme_config`:
+  - tambah `logo_url`, `heading_font`, `body_font`.
 
-Endpoint internal (ERP):
-- `GET/PATCH /api/site-pages/{page_key}`
-- `GET/PATCH /api/site-footer`
-- `GET/PATCH /api/settings/branding`
+**Collection baru (MongoDB)**
+- `site_pages` — satu dokumen per `page_key` tetap (tidak bisa create page bebas):
+  - `page_key ∈ {home, about, fleet_index, destinations_index, contact}`
+  - schema:
+    ```json
+    {
+      "id": "...",
+      "page_key": "home",
+      "blocks": [
+        {"id":"blk_...","type":"home_hero","hidden":false,"device":"all","props":{}}
+      ],
+      "updated_at": "...",
+      "updated_by": "user_id/email"
+    }
+    ```
+- `site_footer` — singleton:
+  - schema:
+    ```json
+    {
+      "id": "footer",
+      "brand_description": "...",
+      "social_links": [{"platform":"instagram","url":"https://..."}],
+      "nav_columns_visibility": {"jelajahi": true, "layanan": true},
+      "updated_at": "...",
+      "updated_by": "..."
+    }
+    ```
 
-Endpoint publik:
-- `GET /api/public/site-pages/{page_key}`
-- `GET /api/public/site-footer`
-- `GET /api/public/branding`
+**Endpoint internal (ERP, butuh login + role `site_builder`)**
+- `GET /api/site-pages/{page_key}`
+- `PATCH /api/site-pages/{page_key}` — body `{blocks}`; validasi schema per blok.
+- `GET /api/site-footer`
+- `PATCH /api/site-footer`
+- `PATCH /api/settings` — menerima tambahan `theme_config.logo_url/heading_font/body_font`.
 
-Hardening:
-- Fallback default blocks jika dokumen belum ada.
-- Validasi schema per blok (deny unknown props, length limits, URL sanitization).
+**Endpoint publik (tanpa login)**
+- `GET /api/public/site-pages/{page_key}` — **wajib fallback** ke default blocks bila dokumen kosong/absen.
+- `GET /api/public/site-footer` — fallback default footer bila singleton belum ada.
 
-#### Phase 8.2 — Library Blok: Extend dari blok Landing
+**Validasi & hardening**
+- Sanitasi string / rich-text (anti-XSS).
+- Batas panjang text per field (mencegah layout rusak seperti bug data 60k char).
+- Validasi URL untuk `logo_url` dan `social_links[].url`.
+- Tolak `page_key` di luar whitelist (404/422).
 
-Blok **baru** (untuk menampung konten hardcode yang ditemukan):
-- `home_hero` (judul/subjudul/gambar/chips/CTA)
-- `value_props` (kartu icon+judul+deskripsi)
-- `trust_signals`
-- `faq_accordion`
+---
+
+#### Phase 8.2 — Block Library: Whitelist per halaman + Props Schema — 🅿️ PLANNED
+
+> Fokus Phase 8 adalah memindahkan *konten hardcode* jadi data-driven blok; bukan mengganti seluruh sumber data entity yang sudah dinamis (armada/destinasi/testimoni) kecuali bagian yang memang hardcode.
+
+**Whitelist blok per `page_key` (kontrak anti-kekacauan)**
+
+| page_key | Blok yang diizinkan | Catatan sumber data |
+|---|---|---|
+| `home` | `home_hero`, `booking_steps`, `value_props`, `stats_band`, `featured_fleet`, `featured_destinations`, `testimonials_grid`, `trust_signals`, `faq_accordion`, `cta_band` | Migrasi dari konstanta hardcode di `Home.jsx` (HERO, chips, VALUE_PROPS, TRUST, FAQS) |
+| `about` | `hero_simple`, `stats_band`, `about_values`, `cta_band` | Migrasi dari `About.jsx` |
+| `fleet_index` | `hero_simple`, `standards_list`, `faq_accordion`, `cta_band` | Grid armada tetap dari `/public/fleet`; yang dipindah hanya STANDARDS + FAQ |
+| `destinations_index` | `hero_simple`, `cta_band` | Grid destinasi tetap dari `/public/destinations` |
+| `contact` | `hero_simple`, `contact_channels`, `cta_band` | Channel kontak tetap dari `/public/company`; blok ini mengatur tampil/urutan/presentasi |
+
+**Skema props untuk tipe blok baru**
+
+- `home_hero`
+  ```json
+  {
+    "eyebrow": "...",
+    "title": "...",
+    "subtitle": "...",
+    "image_url": "https://...",
+    "chips": ["Driver berpengalaman", "CHSE / KIR"],
+    "cta_primary": {"label": "Minta Penawaran", "to": "/quotation"},
+    "cta_secondary": {"label": "Halaman Kalkulator", "to": "/trip-calculator"}
+  }
+  ```
+
+- `value_props` / `about_values` / `trust_signals`
+  ```json
+  {
+    "items": [
+      {"icon_key": "ShieldCheck", "title": "Armada Terawat", "description": "...", "tag": "Kelaikan terjaga"}
+    ]
+  }
+  ```
+  - `icon_key` harus dari whitelist ikon `lucide-react` yang didukung (bukan upload ikon bebas).
+
 - `stats_band`
-- `cta_band`
-- `standards_list` (standar kelaikan armada)
-- `contact_channels` (telepon/WA/email/alamat)
-- `about_values` (grid value cards ala About)
+  ```json
+  {
+    "items": [
+      {"key": "fleet", "value": 12, "suffix": "+", "label": "Armada"}
+    ]
+  }
+  ```
 
-Blok **reuse** dari Landing (yang sudah ada):
-- hero generik
-- grid entity (armada/destinasi/testimoni)
-- image+text / content blocks
-- conversion/CTA blocks
+- `faq_accordion`
+  ```json
+  {
+    "eyebrow": "FAQ",
+    "title": "Pertanyaan yang sering diajukan",
+    "items": [{"q": "...", "a": "..."}]
+  }
+  ```
 
-Footer blocks:
-- `footer_columns`
-- `footer_social`
-- `footer_bottom`
+- `standards_list`
+  ```json
+  {
+    "items": [{"title": "KIR aktif", "description": "..."}]
+  }
+  ```
 
-#### Phase 8.3 — Frontend: Editor Baru “Page Builder Situs”
+- `contact_channels`
+  - Props minimal (umumnya hanya konfigurasi tampilan), tetapi sumber nilai (telp/WA/email/alamat) tetap dari `/public/company`.
 
-Route & menu:
-- Menu: **Konten Web → Page Builder Situs** (`/app/site-builder`)
-- Role: `owner`, `marketing_admin` (opsional `ops_admin` sesuai kebijakan)
+**Footer (data-driven sebagian)**
+- Editable:
+  - `brand_description` (text)
+  - `social_links[]` (platform + url)
+  - `nav_columns_visibility` (toggle show/hide kolom Jelajahi/Layanan)
+- Tetap hardcode (demi integritas navigasi):
+  - daftar link & tujuan untuk kolom Jelajahi/Layanan (route internal).
 
-UX editor (reuse LandingBuilder):
-- Panel kiri: daftar blok + tombol tambah + reorder
+---
+
+#### Phase 8.3 — Frontend: Editor “Page Builder Situs” + Public Renderer — 🅿️ PLANNED
+
+**File BARU (direncanakan)**
+- `frontend/src/features/app/SiteBuilder.jsx`
+- `frontend/src/components/app/sitebuilder/SitePageEditor.jsx`
+- `frontend/src/components/app/sitebuilder/SiteBlockForm.jsx`
+- `frontend/src/components/app/sitebuilder/SiteFooterEditor.jsx`
+- `frontend/src/components/app/sitebuilder/BrandingTypographyPanel.jsx`
+- `frontend/src/components/public/SiteBlockRenderer.jsx`
+
+**File DIMODIFIKASI (direncanakan)**
+- `frontend/src/App.js`
+  - route `/app/site-builder` dengan `<RoleGuard section="site-builder">`.
+- `frontend/src/config/navigationConfig.js`
+  - tambah menu `site-builder` di grup "Konten Web".
+  - tambah allowlist role: `owner`, `marketing_admin`.
+- Halaman publik:
+  - `frontend/src/features/public/Home.jsx`
+  - `frontend/src/features/public/About.jsx`
+  - `frontend/src/features/public/Fleet.jsx` (bagian index)
+  - `frontend/src/features/public/Destinations.jsx` (index)
+  - `frontend/src/features/public/Contact.jsx`
+  - tujuan: render bagian konten hardcode via `SiteBlockRenderer` dari `/public/site-pages/{page_key}`.
+- `frontend/src/components/public/PublicLayout.jsx`
+  - Footer: ambil `brand_description`, `social_links`, `nav_columns_visibility` dari `/public/site-footer`.
+- `frontend/src/components/public/Logo.jsx`
+  - dukung `logoUrl` opsional (render `<img>` jika ada; fallback SVG monogram jika kosong).
+- `frontend/src/components/public/Preloader.jsx`
+  - reuse `Logo.jsx` (hilangkan duplikasi SVG manual) agar logo custom juga muncul di preloader.
+- `frontend/src/index.css`
+  - tambah CSS variables `--font-heading`, `--font-body`.
+  - arahkan kelas heading yang sekarang memakai `font-fraunces` menjadi menggunakan variable (agar 1 setting theme_config berlaku site-wide tanpa refactor besar).
+- `frontend/src/components/cms/ThemeManagerPanel.jsx`
+  - extend UI: input `logo_url` + dropdown `heading_font`/`body_font` (whitelist) + publish via `PATCH /api/settings`.
+
+**UX Editor (reuse pola LandingBuilder)**
+- Panel kiri: list blok (reorder naik/turun; opsi hidden per blok; tambah blok via select)
 - Tengah: preview desktop/mobile (renderer sama dengan publik)
-- Kanan: form edit blok terpilih + MediaLibrary
+- Panel kanan: form blok terpilih + MediaLibrary untuk gambar
 
-Sub-modul:
-1. **Halaman inti**: Beranda/Tentang/Armada/Destinasi/Kontak
-2. **Header & Footer**: edit footer global + opsi header logo/text
-3. **Branding & Typography**: logo_url, heading_font, body_font + live preview
+---
 
-#### Phase 8.4 — Migrasi & Kompatibilitas (No visual regression)
+#### Phase 8.4 — Migrasi & Rollout (No Visual Regression) — 🅿️ PLANNED
 
-Tujuan: saat fitur diaktifkan, tampilan publik **identik** dengan versi hardcode.
+**Tujuan:** saat fitur aktif, tampilan publik **identik** dengan versi hardcode.
 
-Steps:
-- Seed `site_pages` dari konstanta hardcode saat ini:
-  - `Home.jsx`: HERO, chips, VALUE_PROPS, TRUST, FAQS, CTA band
-  - `About.jsx`: seluruh konten
-  - `Fleet.jsx`: STANDARDS + FAQ
-  - `Contact.jsx`: teks heading/CTA (kontak inti tetap dari `/public/company`)
-- Seed `site_footer` dari footer yang sedang ada.
-- Refactor halaman publik untuk merender via renderer blok (dan fallback ke hardcode bila fetch gagal selama masa transisi).
+**Skrip migrasi (direncanakan)**
+- `scripts/migrate_site_pages_seed.py`
+  - mengisi `site_pages` & `site_footer` dari konstanta hardcode saat ini:
+    - `Home.jsx`: HERO, chips, VALUE_PROPS, TRUST, FAQS, CTA.
+    - `About.jsx`: seluruh konten.
+    - `Fleet.jsx`: STANDARDS + FAQ.
+    - `Contact.jsx`: teks heading/CTA.
+    - `PublicLayout.jsx`: `brand_description` (footer).
 
-#### Phase 8.5 — Guardrails & Testing
+**Urutan rollout disarankan (minim risiko):**
+1. `contact` (paling kecil)
+2. `about`
+3. `fleet_index`
+4. `home` (paling kompleks)
+5. Footer + Logo + Typography terakhir (karena berdampak ke semua halaman termasuk `/lp/:slug`).
 
-Guardrails baru:
-- Invariant: endpoint publik site-pages/footer/branding **tidak boleh** membuat halaman blank.
-- Invariant: blok wajib tervalidasi schema; batasi panjang text/URL; cegah XSS di rich text.
+**Fallback selama transisi:**
+- Jika fetch `site-pages` gagal, renderer menggunakan default blocks sehingga halaman tidak blank.
 
-Testing:
-- E2E `testing_agent_v3`: semua halaman publik + footer + /lp/:slug
-- ERP smoke: edit blok, reorder, hide, ubah logo/font, update footer → perubahan tampil di publik.
-- Gate: tambah invariant ke `scripts/gate.sh` + selftest MERAH↔HIJAU.
+---
 
-Docs:
-- Update `docs/03_DATA_MODEL.md`, `docs/04_API_CONTRACT.md`, `docs/05_NAVIGATION_MAP.md`.
-- Update BUG_REGISTRY bila ada.
+#### Phase 8.5 — Guardrails & Testing — 🅿️ PLANNED
+
+**Guardrail baru (mengikuti konvensi proyek)**
+- **INV-SITEBUILDER-01** — *No-blank public pages*:
+  - Endpoint publik `GET /api/public/site-pages/{page_key}` & `GET /api/public/site-footer` tidak boleh menyebabkan halaman kosong/500.
+  - Self-test mutasi MERAH↔HIJAU: hapus dokumen `site_pages`/`site_footer` → API tetap 200 dengan default.
+- **INV-SITEBUILDER-02** — *Whitelist blok per halaman*:
+  - `PATCH /api/site-pages/{page_key}` menolak blok tipe yang tidak diizinkan untuk page_key tersebut.
+  - Self-test: injeksi blok ilegal harus gagal 422.
+- **INV-THEME-01 (perluasan)**:
+  - Pastikan setting font baru (`heading_font/body_font`) tidak melanggar kontrak kontras/tema yang sudah dijaga.
+
+**Testing plan (setelah implementasi, bukan sekarang)**
+- `testing_agent_v3`:
+  1. Validasi 5 halaman inti render normal (tanpa blank) sebelum dan sesudah migrasi.
+  2. Verifikasi footer: deskripsi brand berasal dari `site_footer`; kontak tetap dari `/public/company`.
+  3. Edit via ERP: tambah/reorder/hide blok + simpan → refresh halaman publik → perubahan terlihat.
+  4. Edit logo_url + font heading/body → cek perubahan di navbar, footer, dan preloader.
+  5. Pastikan `/lp/:slug` tidak rusak oleh perubahan footer/branding.
+- Gate:
+  - Wire guardrail ke `scripts/gate.sh` (target tetap **0 FAIL, 0 SKIP**).
+- RBAC regression:
+  - `driver` dan `ops_admin` tidak bisa akses `/app/site-builder` dan endpoint PATCH terkait (403/redirect).
+
+**Dokumentasi (setelah implementasi)**
+- `docs/03_DATA_MODEL.md` (site_pages, site_footer, theme_config fields baru)
+- `docs/04_API_CONTRACT.md` (endpoint internal & publik Phase 8.1)
+- `docs/05_NAVIGATION_MAP.md` (menu baru + RBAC section site_builder)
+
+---
 
 ## 3) Next Actions (sisa backlog setelah Fase 0–7 selesai)
 
 0. ✅ **SELESAI 2026-08-13 — Kebersihan data uji (BUG-0127) + verifikasi alur end-to-end.**
-1. 🅿️ **Phase 8 — Site-wide Visual Page Builder** (plan dibuat; menunggu izin user untuk eksekusi).
+1. 🅿️ **Phase 8 — Site-wide Visual Page Builder** (plan detail dibuat; menunggu izin user untuk eksekusi).
 2. **Uji beban konkuren tinggi (load test)** — belum pernah dijalankan (P1 lama).
 3. **Kredensial nyata** WhatsApp Cloud / Meta Ads / Google Ads / GA4 → semua LIVE-READY tapi MOCK.
 4. **Promo di halaman publik non-wizard** — `/promo` khusus + kartu promo di beranda belum ada.
 5. **Notifikasi ops untuk hold hangus** — laporan ada; dorongan proaktif (WA/email) belum dibuat.
+
+---
 
 ## 4) Success Criteria
 
@@ -323,11 +473,19 @@ Docs:
 - Phase 3: `bash scripts/gate.sh` HIJAU 0 FAIL 0 SKIP + invariants terdaftar; E2E PASS.
 - Phase 4: docs & handoff lengkap.
 
-### Target Phase 8 (baru)
+### Target Phase 8 (acceptance tests yang presisi)
 
-1. Owner/marketing_admin dapat mengedit **Beranda/Tentang/Armada/Destinasi/Kontak** dari ERP tanpa menyentuh kode.
-2. Owner dapat mengedit **Footer, Logo, Typography** (heading/body font) dan perubahan langsung terlihat di publik.
-3. Situs publik **tidak pernah blank**: ada fallback blocks jika data belum tersedia/korup.
-4. Renderer editor == renderer publik (no surprise): preview identik dengan publik.
-5. Guardrail + `gate.sh` tetap hijau setelah implementasi.
-
+1. **Editor tersedia & RBAC benar**
+   - Owner dan marketing_admin melihat menu **Konten Web → Page Builder Situs**.
+   - Role lain (ops_admin/driver) tidak bisa akses halaman maupun endpoint PATCH (403/redirect).
+2. **5 halaman inti bisa diedit tanpa ubah kode**
+   - Konten hardcode yang dulu ada di `Home.jsx/About.jsx/Fleet.jsx/Contact.jsx` sekarang berasal dari `site_pages` dan dapat diubah lewat editor.
+3. **Footer global bisa diedit dengan batasan aman**
+   - `brand_description` dan `social_links` berubah via editor dan tampil di semua halaman publik.
+   - Link "Jelajahi"/"Layanan" tetap route-locked; hanya bisa show/hide kolom.
+4. **Logo & typography bersifat global**
+   - `theme_config.logo_url` mengubah logo di navbar + footer + preloader (fallback ke SVG bila kosong).
+   - `theme_config.heading_font/body_font` mengubah font heading/body site-wide via CSS variable.
+5. **Tidak ada halaman blank/500**
+   - Guardrail `INV-SITEBUILDER-01` memastikan default fallback selalu tersedia.
+   - `gate.sh` tetap hijau (0 FAIL, 0 SKIP) setelah fitur diimplementasikan.
